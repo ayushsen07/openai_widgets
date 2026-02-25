@@ -1,0 +1,421 @@
+# Complete Embedding Flow Explanation
+
+This document explains exactly what happens when someone embeds your widgets on their website.
+
+---
+
+## Voice Widget Embedding Flow
+
+### Step 1: Customer Adds Code to Their Website
+
+```html
+<!-- Customer's website: example.com -->
+<script src="https://your-app.com/embed.js"></script>
+<div id="JarvisAI-widget"></div>
+```
+
+### Step 2: Browser Loads [embed.js](file:///d:/Company_projects/Jarvis_widget/public/embed.js)
+
+**File:** [public/embed.js](file:///d:/Company_projects/jarvis-widget-openai/public/embed.js)
+
+**What it does:**
+1. **Finds the container** (Line 9)
+   ```javascript
+   const containers = document.querySelectorAll("#JarvisAI-widget")
+   ```
+
+2. **Reads configuration** (Lines 18-20)
+   ```javascript
+   const position = container.getAttribute("data-position") || "bottom-right"
+   const theme = container.getAttribute("data-theme") || "light"
+   ```
+
+3. **Detects your app's URL** (Lines 25-38)
+   ```javascript
+   // Finds where embed.js was loaded from
+   // Example: https://your-app.com/embed.js → baseUrl = https://your-app.com
+   ```
+
+4. **Creates an iframe** (Lines 49-59)
+   ```javascript
+   const iframe = document.createElement("iframe")
+   iframe.src = `${baseUrl}/embed?position=bottom-right&theme=light`
+   ```
+
+5. **Styles the iframe** (Lines 60-70)
+   ```javascript
+   // Full-screen, transparent overlay
+   // pointer-events: none (clicks pass through until widget is active)
+   // z-index: 2147483647 (appears on top of everything)
+   ```
+
+6. **Adds microphone permission** (Line 71)
+   ```javascript
+   iframe.allow = "microphone; screen-wake-lock"
+   ```
+
+7. **Appends iframe to customer's page** (Line 86)
+   ```javascript
+   document.body.appendChild(iframe)
+   ```
+
+### Step 3: Iframe Loads Your `/embed` Page
+
+**File:** [app/embed/page.tsx](file:///d:/Company_projects/jarvis-widget-openai/app/embed/page.tsx)
+
+**What it does:**
+1. **Receives URL parameters** (Line 12)
+   ```tsx
+   const { position = "bottom-right", theme = "light" } = searchParams
+   ```
+
+2. **Renders the widget component** (Line 19)
+   ```tsx
+   <JarvisWidget position={position} theme={theme} />
+   ```
+
+### Step 4: Widget Component Initializes
+
+**File:** [components/jarvis-widget.tsx](file:///d:/Company_projects/jarvis-widget-openai/components/jarvis-widget.tsx)
+
+**What it does:**
+1. **Calls the OpenAI hook** (Lines 32-37)
+   ```tsx
+   const {
+     isConnected,
+     isConnecting,
+     connect,
+     disconnect,
+     error,
+   } = useOpenAIRealtimeAgent()
+   ```
+
+2. **Renders the "Talk to Jarvis" button** (Lines 75-88)
+   - Initially collapsed
+   - Floating in the position specified
+
+### Step 5: Hook Initializes Session
+
+**File:** [hooks/use-openai-realtime-agent.tsx](file:///d:/Company_projects/jarvis-widget-openai/hooks/use-openai-realtime-agent.tsx)
+
+**What it does on mount (Lines 14-151):**
+
+1. **Fetches ephemeral key** (Line 18)
+   ```tsx
+   const r = await fetch("/api/session")
+   ```
+
+2. **Calls your backend** → Goes to next step
+
+### Step 6: Backend Generates Ephemeral Key
+
+**File:** [app/api/session/route.ts](file:///d:/Company_projects/jarvis-widget-openai/app/api/session/route.ts)
+
+**What it does:**
+
+1. **Reads your secret key from .env** (Line 8)
+   ```typescript
+   Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+   ```
+
+2. **Calls OpenAI API** (Lines 5-16)
+   ```typescript
+   POST https://api.openai.com/v1/realtime/client_secrets
+   Body: {
+     session: {
+       type: "realtime",
+       model: "gpt-4o-realtime-preview-2025-06-03"
+     }
+   }
+   ```
+
+3. **Returns ephemeral key** (Line 28)
+   ```typescript
+   return NextResponse.json(data)
+   // { value: "eph_abc123...", expires_at: 1234567890 }
+   ```
+
+### Step 7: Hook Creates Agent Session
+
+**Back in:** [hooks/use-openai-realtime-agent.tsx](file:///d:/Company_projects/jarvis-widget-openai/hooks/use-openai-realtime-agent.tsx)
+
+**What it does (Lines 30-135):**
+
+1. **Creates agent with instructions** (Lines 30-128)
+   ```tsx
+   const agent = new RealtimeAgent({
+     name: "English Assistant",
+     instructions: `You are an AI voice assistant for Billy's Steak House...`
+   })
+   ```
+
+2. **Creates session** (Lines 131-133)
+   ```tsx
+   const newSession = new RealtimeSession(agent, {
+     model: "gpt-realtime-mini",
+   })
+   ```
+
+3. **Stores session in state** (Line 135)
+   ```tsx
+   setSession(newSession)
+   ```
+
+### Step 8: User Clicks "Talk to Jarvis"
+
+**What happens:**
+
+1. **Widget expands** ([jarvis-widget.tsx](file:///d:/Company_projects/jarvis-widget-openai/components/jarvis-widget.tsx) Line 45)
+   ```tsx
+   setIsExpanded(true)
+   ```
+
+2. **Calls connect()** (Line 46)
+   ```tsx
+   await connect()
+   ```
+
+3. **Hook connects to OpenAI** ([use-openai-realtime-agent.tsx](file:///d:/Company_projects/jarvis-widget-openai/hooks/use-openai-realtime-agent.tsx) Lines 154-186)
+
+   a. **Fetches fresh ephemeral key** (Line 164)
+   ```tsx
+   const r = await fetch("/api/session")
+   ```
+
+   b. **Connects session** (Line 172)
+   ```tsx
+   await session.connect({ apiKey: EPHEMERAL_KEY })
+   ```
+
+   c. **Sends empty message to trigger greeting** (Line 175)
+   ```tsx
+   session.sendMessage('')
+   ```
+
+   d. **Updates state** (Lines 177-179)
+   ```tsx
+   setIsConnected(true)
+   setIsListening(true)
+   ```
+
+### Step 9: Voice Conversation Begins
+
+**What happens:**
+
+1. **Microphone activates** (browser asks for permission if first time)
+2. **User speaks** → Audio sent to OpenAI via WebSocket
+3. **OpenAI processes** → Transcribes, generates response, synthesizes speech
+4. **Response plays** → User hears the AI voice
+5. **Conversation continues** → Back and forth until user disconnects
+
+---
+
+## Chat Widget Embedding Flow
+
+### Step 1: Customer Adds Code
+
+```html
+<script src="https://your-app.com/chat-embed.js"></script>
+<div id="JarvisAI-chat-widget"></div>
+```
+
+### Step 2: Browser Loads [chat-embed.js](file:///d:/Company_projects/Jarvis_widget/public/chat-embed.js)
+
+**File:** [public/chat-embed.js](file:///d:/Company_projects/jarvis-widget-openai/public/chat-embed.js)
+
+**What it does (similar to voice widget):**
+
+1. **Finds container** (Line 9)
+2. **Reads config** (Lines 18-21)
+   ```javascript
+   const position = container.getAttribute("data-position") || "bottom-right"
+   const theme = container.getAttribute("data-theme") || "light"
+   const model = container.getAttribute("data-model") || "gpt-3.5-turbo"
+   const welcomeMessage = container.getAttribute("data-welcome-message") || "Hello!"
+   ```
+
+3. **Creates iframe** (Lines 49-55)
+   ```javascript
+   iframe.src = `${baseUrl}/embed/chat?position=...&theme=...&model=...&welcomeMessage=...`
+   ```
+
+4. **Appends to page** (Line 86)
+
+### Step 3: Iframe Loads `/embed/chat` Page
+
+**File:** [app/embed/chat/page.tsx](file:///d:/Company_projects/jarvis-widget-openai/app/embed/chat/page.tsx)
+
+**What it does:**
+
+1. **Receives parameters** (Lines 11-17)
+2. **Renders ChatWidget** (Lines 21-27)
+   ```tsx
+   <ChatWidget
+     position={position}
+     theme={theme}
+     model={model}
+     welcomeMessage={welcomeMessage}
+   />
+   ```
+
+### Step 4: ChatWidget Component Loads
+
+**File:** [components/ChatComponent/chat-widget.tsx](file:///d:/Company_projects/jarvis-widget-openai/components/ChatComponent/chat-widget.tsx)
+
+**What it does:**
+
+1. **Initializes state** (Lines 28-32)
+   ```tsx
+   const [messages, setMessages] = useState<Message[]>([])
+   const [isLoading, setIsLoading] = useState(false)
+   ```
+
+2. **Renders collapsed button** (Lines 175-194)
+
+### Step 5: User Clicks Chat Button
+
+**What happens:**
+
+1. **Widget expands** (Line 44)
+2. **Shows welcome message** (Lines 47-54)
+   ```tsx
+   setMessages([{
+     role: "assistant",
+     content: welcomeMessage
+   }])
+   ```
+
+### Step 6: User Types and Sends Message
+
+**What happens (Lines 95-128):**
+
+1. **Adds user message to UI** (Lines 99-101)
+   ```tsx
+   const userMessage = { role: "user", content: textInput }
+   setMessages([...messages, userMessage])
+   ```
+
+2. **Calls backend API** (Line 106)
+   ```tsx
+   const response = await sendMessageToAPI(newMessages)
+   ```
+
+3. **Backend processes request** → Goes to next step
+
+### Step 7: Backend Calls OpenAI
+
+**File:** [app/api/chat/route.ts](file:///d:/Company_projects/jarvis-widget-openai/app/api/chat/route.ts)
+
+**What it does:**
+
+1. **Reads your secret key** (Lines 4-6)
+   ```typescript
+   const openai = new OpenAI({
+     apiKey: process.env.OPENAI_API_KEY,
+   })
+   ```
+
+2. **Calls OpenAI Chat API** (Lines 20-24)
+   ```typescript
+   const completion = await openai.chat.completions.create({
+     model: 'gpt-3.5-turbo', // or whatever model was specified
+     messages: messages,
+     temperature: 0.7,
+   })
+   ```
+
+3. **Returns response** (Lines 26-29)
+   ```typescript
+   return NextResponse.json({
+     message: completion.choices[0].message,
+     usage: completion.usage,
+   })
+   ```
+
+### Step 8: Frontend Displays Response
+
+**Back in:** [chat-widget.tsx](file:///d:/Company_projects/jarvis-widget-openai/components/ChatComponent/chat-widget.tsx)
+
+**What it does (Line 107):**
+
+```tsx
+setMessages((prev) => [...prev, response.message])
+// Adds AI response to chat history
+```
+
+### Step 9: Conversation Continues
+
+User can keep typing and sending messages, repeating steps 6-8.
+
+---
+
+## Key Files Summary
+
+| File | Purpose | When It Runs |
+|------|---------|--------------|
+| [public/embed.js](file:///d:/Company_projects/Jarvis_widget/public/embed.js) | Voice widget loader | When customer's page loads |
+| [public/chat-embed.js](file:///d:/Company_projects/Jarvis_widget/public/chat-embed.js) | Chat widget loader | When customer's page loads |
+| [app/embed/page.tsx](file:///d:/Company_projects/Jarvis_widget/app/embed/page.tsx) | Voice widget iframe page | When iframe loads |
+| [app/embed/chat/page.tsx](file:///d:/Company_projects/jarvis-widget-openai/app/embed/chat/page.tsx) | Chat widget iframe page | When iframe loads |
+| [components/jarvis-widget.tsx](file:///d:/Company_projects/Jarvis_widget/components/jarvis-widget.tsx) | Voice widget UI | Inside voice iframe |
+| [components/ChatComponent/chat-widget.tsx](file:///d:/Company_projects/Jarvis_widget/components/ChatComponent/chat-widget.tsx) | Chat widget UI | Inside chat iframe |
+| [hooks/use-openai-realtime-agent.tsx](file:///d:/Company_projects/jarvis-widget-openai/hooks/use-openai-realtime-agent.tsx) | Voice connection logic | When voice widget initializes |
+| [app/api/session/route.ts](file:///d:/Company_projects/Jarvis_widget/app/api/session/route.ts) | Generates ephemeral keys | When voice connects |
+| [app/api/chat/route.ts](file:///d:/Company_projects/Jarvis_widget/app/api/chat/route.ts) | Proxies chat requests | When user sends message |
+
+---
+
+## Security Flow
+
+### Voice Widget
+```
+Customer's Browser
+  ↓
+embed.js (public, no secrets)
+  ↓
+/embed page (public, no secrets)
+  ↓
+JarvisWidget component (public, no secrets)
+  ↓
+useOpenAIRealtimeAgent hook
+  ↓
+/api/session (YOUR server, has OPENAI_API_KEY)
+  ↓
+OpenAI API (receives ephemeral key)
+  ↓
+Back to browser (ephemeral key, expires in 60s)
+  ↓
+WebSocket connection to OpenAI (using ephemeral key)
+```
+
+**Security:** Your `OPENAI_API_KEY` never leaves your server. Browser only gets temporary keys.
+
+### Chat Widget
+```
+Customer's Browser
+  ↓
+chat-embed.js (public, no secrets)
+  ↓
+/embed/chat page (public, no secrets)
+  ↓
+ChatWidget component (public, no secrets)
+  ↓
+User types message
+  ↓
+/api/chat (YOUR server, has OPENAI_API_KEY)
+  ↓
+OpenAI Chat API (using your key)
+  ↓
+Response back to browser
+```
+
+**Security:** Your `OPENAI_API_KEY` never leaves your server. All requests proxied through your backend.
+
+---
+
+## Billing
+
+- **Voice Widget:** All usage billed to YOUR OpenAI account
+- **Chat Widget:** All usage billed to YOUR OpenAI account
+
+You need to charge customers (subscription/usage-based) to cover these costs.
