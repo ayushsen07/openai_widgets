@@ -42,9 +42,13 @@ export function JarvisWidget({
   const handleToggleExpanded = async () => {
     if (!isExpanded) {
       setIsExpanded(true);
+      // Notify parent iframe to expand
+      window.parent?.postMessage({ type: "jarvis-widget-resize", expanded: true }, "*");
       await connect();
     } else {
       setIsExpanded(false);
+      // Notify parent iframe to collapse
+      window.parent?.postMessage({ type: "jarvis-widget-resize", expanded: false }, "*");
       await disconnect();
     }
   };

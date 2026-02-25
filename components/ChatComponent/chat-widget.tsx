@@ -42,6 +42,9 @@ export function ChatWidget({
     const newState = !isExpanded;
     setIsExpanded(newState);
 
+    // Notify parent iframe to resize
+    window.parent?.postMessage({ type: "jarvis-widget-resize", expanded: newState }, "*");
+
     if (newState && messages.length === 0) {
       setMessages([
         {
@@ -279,8 +282,8 @@ export function ChatWidget({
                   >
                     <div
                       className={`max-w-[80%] px-4 py-3 rounded-2xl ${message.role === "user"
-                          ? "bg-amber-500 text-white rounded-br-none"
-                          : "bg-white rounded-bl-none shadow-sm border border-gray-200"
+                        ? "bg-amber-500 text-white rounded-br-none"
+                        : "bg-white rounded-bl-none shadow-sm border border-gray-200"
                         }`}
                     >
                       {message.content}
