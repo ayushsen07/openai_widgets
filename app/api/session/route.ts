@@ -16,7 +16,7 @@ export async function GET() {
         session: {
           type: "realtime",
           model: "gpt-realtime-mini",
-          instructions: ZULU_PROMPT,
+          instructions:BILLYS_STEAKHOUSE_PROMPT ,
         },
       }),
     });
