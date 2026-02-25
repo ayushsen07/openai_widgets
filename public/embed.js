@@ -66,7 +66,7 @@
 
       // Handle iframe load
       iframe.onload = () => {
-        iframe.style.pointerEvents = "auto"
+        // iframe.style.pointerEvents = "auto"
         console.log("JarvisAI Widget loaded successfully")
       }
 
